@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Table</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            background-color: #1a1a1a;
+            font-family: sans-serif;
+            overflow: hidden; /* 防止縮放時出現捲軸 */
+        }
+
+        /* --- 新增：Flexbox 左右排版容器 --- */
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- 新增：側邊選單 (毛玻璃質感) --- */
+        #side-menu {
+            width: 300px; /* 選單寬度 */
+            background: rgba(30, 30, 30, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+            color: #eee;
+            padding: 20px;
+            flex-shrink: 0;
+            z-index: 20;
+            /* 平滑收合動畫 */
+            transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1), padding 0.4s ease;
+            overflow: hidden; 
+            white-space: nowrap; /* 避免縮小時文字折行 */
+        }
+
+        /* 當選單被隱藏時的狀態 */
+        #side-menu.hidden {
+            width: 0;
+            padding-left: 0;
+            padding-right: 0;
+            border-right: none;
+        }
+
+        /* --- 修改：右側遊戲地圖區 --- */
+        #game-wrapper {
+            flex-grow: 1; /* 自動填滿剩下的螢幕空間 */
+            height: 100%;
+            position: relative;
+            background-color: #1a1a1a;
+        }
+
+        /* 確保表格在 wrapper 內自適應縮放 */
+        table {
+            width: 100%;               
+            height: 100%;              
+            border-collapse: collapse;
+            border-spacing: 0;
+            table-layout: fixed;
+        }
+
+        td { 
+            border: 1px solid #444;
+            background-color: #2a2a2a;
+            cursor: pointer;
+            position: relative; 
+            overflow: hidden;   
+            transition: background 0.3s ease;
+            user-select: none;
+        }
+        
+        .active-gradient {
+            /* 不再使用固定的 fallback 預設色，改由 JS 每次產生隨機配色並設到 --c1..--c4 */
+            background: linear-gradient(135deg,
+                var(--c1),
+                var(--c2),
+                var(--c3),
+                var(--c4)
+            );
+            background-size: 300% 300%;
+            animation: gradientFlow 4s ease infinite;
+            border-color: transparent;
+        }
+        
+        @keyframes gradientFlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .particle {
+            position: absolute;
+            bottom: -20px;
+            background: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            animation: floatUp linear forwards;
+            pointer-events: none;
+        }
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) rotate(0deg) scale(1);
+                opacity: 0;
+            }
+            20% { opacity: 1; }
+            100% {
+                transform: translateY(-160px) rotate(360deg) scale(0);
+                opacity: 0;
+            }
+        }
+        .pacman {
+            background-color: #FFD700 !important; /* 經典黃色 */
+            border-radius: 50%;
+            transform: scale(0.7); /* 讓他比格子稍微小一點，保留一點邊距 */
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8); /* 加一點發光效果 */
+            z-index: 10;
+        }
+        .wall {
+            background-color: #0a0a0a !important; /* 比背景更深的顏色 */
+            border: 1px solid #222 !important;
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8); /* 內陰影增加立體感 */
+            pointer-events: none; /* 讓牆壁無法被滑鼠觸發特效 */
+        }
+        /* --- 新增：幽靈樣式 (毛玻璃高光質感) --- */
+        .ghost {
+            background: rgba(255, 50, 80, 0.85) !important; /* 帶有透明度的危險紅色 */
+            border-radius: 40% 40% 10% 10%; /* 經典的幽靈圓頂平底造型 */
+            box-shadow: 0 0 15px rgba(255, 50, 80, 0.9), inset 0 0 8px rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(4px); /* 背景模糊的毛玻璃效果 */
+            z-index: 9;
+        }
+        /* --- 新增：傳送門與逃生門樣式 (高保真發光質感) --- */
+        .door {
+            background: radial-gradient(circle, rgba(100, 200, 255, 0.9) 20%, rgba(0, 100, 255, 0.4) 80%) !important;
+            border-radius: 20%;
+            box-shadow: 0 0 15px rgba(100, 200, 255, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.6);
+            animation: pulsePortal 2s infinite alternate;
+            z-index: 5;
+        }
+        /* --- 新增：真・逃生門專屬樣式 (翠綠色光芒) --- */
+        .escape-door {
+            background: radial-gradient(circle, rgba(50, 255, 100, 0.9) 20%, rgba(0, 150, 50, 0.4) 80%) !important;
+            border-radius: 20%;
+            box-shadow: 0 0 15px rgba(50, 255, 100, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.6);
+            animation: pulsePortal 2s infinite alternate;
+            z-index: 5;
+        }
+        
+        @keyframes pulsePortal {
+            0% { transform: scale(0.8); box-shadow: 0 0 10px rgba(100, 200, 255, 0.5); }
+            100% { transform: scale(1); box-shadow: 0 0 25px rgba(100, 200, 255, 1); }
+        }
+        /* --- 新增：選單控制項樣式 --- */
+        .control-group {
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .control-group label {
+            font-size: 14px;
+            color: #ddd;
+            font-weight: bold;
+        }
+        
+        /* 美化 HTML5 Range 拉桿 */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            height: 8px;
+            border-radius: 4px;
+            outline: none;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+        }
+        
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #64c8ff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(100, 200, 255, 0.8);
+            transition: transform 0.1s;
+        }
+        
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        /* --- 新增：玻璃質感控制按鈕 --- */
+        .glass-btn {
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.4);
+            color: #fff;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+        }
+        
+        .glass-btn:hover {
+            background: rgba(100, 200, 255, 0.4);
+            box-shadow: 0 0 15px rgba(100, 200, 255, 0.8);
+            transform: translateY(-2px);
+        }
+        
+        /* 暫停狀態的按鈕樣式 (變成警告的紅色調) */
+        .glass-btn.paused {
+            background: rgba(255, 100, 100, 0.3);
+            border-color: rgba(255, 100, 100, 0.5);
+            box-shadow: 0 0 15px rgba(255, 100, 100, 0.6);
+        }
+        
+        /* --- 新增：結算畫面覆蓋層 --- */
+        #end-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none; /* 隱藏時不可點擊 */
+            transition: opacity 0.4s ease;
+        }
+        
+        #end-screen.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .end-panel {
+            background: rgba(20, 20, 20, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 40px 60px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.05);
+            transform: translateY(20px);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        #end-screen.visible .end-panel {
+            transform: translateY(0);
+        }
+        
+        #end-title { font-size: 42px; margin: 0 0 10px 0; text-shadow: 0 0 15px currentColor; }
+        #end-msg { font-size: 18px; color: #ccc; margin-bottom: 30px; }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        
+        <div id="side-menu">
+            <h1 style="margin-top: 0; color: #f2cb2f;">移動迷宮</h1>
+            <p style="font-size: 13px; color: #aaa;">按 ESC 鍵可收合/展開</p>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+
+            <div class="control-group">
+                <label>迷宮複雜度: <span id="density-val" style="color: #64c8ff;">40%</span></label>
+                <input type="range" id="density-slider" min="20" max="60" value="40">
+            </div>
+
+            <div class="control-group">
+                <label>地形每秒變異量: <span id="mutation-val" style="color: #64c8ff;">5</span></label>
+                <input type="range" id="mutation-slider" min="0" max="10" value="5">
+            </div>
+
+            <div class="control-group" style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                <label>目前裝備技能: <span id="current-skill-val" style="color: #ffcc00;">無</span></label>
+                <p style="font-size: 12px; color: #aaa; margin: 5px 0 0 0; line-height: 1.6;">
+                    按 空白鍵 <span style="color: #ffcc00; font-weight: bold;">發動技能</span><br>
+                    按 0 裝備<span style="color: #1195d2; font-weight: bold;">爆破光圈</span> (須原地停留2秒)<br>
+                    按 1 裝備<span style="color: #1195d2; font-weight: bold;">反向激光炮</span> (須邊界無法穿越)
+                </p>
+            </div>
+
+            <div class="control-group" style="margin-top: 30px;">
+                <button id="toggle-game-btn" class="glass-btn">開始遊戲</button>
+            </div>
+        </div>
+
+        <div id="game-wrapper" style="position: relative;"> 
+            <table id="particleTable"></table>
+            <canvas id="blastCanvas" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10;"></canvas>
+            <div id="end-screen">
+                <div class="end-panel">
+                    <h1 id="end-title">遊戲結束</h1>
+                    <p id="end-msg">你被幽靈抓到了！</p>
+                    <button id="restart-btn" class="glass-btn" style="margin-top: 20px; font-size: 18px; padding: 15px 30px;">重新開始</button>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <script>
+        var table = document.getElementById('particleTable');
+        var rows = 27;  
+        var cols = 48;  
+        // 【新增】技能切換系統變數
+        var currentSkill = null; // 記錄目前選擇的技能 ('blast' 代表清圖)
+        var chargeTimeMs = 2000; // 爆破所需的蓄力時間 (毫秒)
+        // 【新增】激光炮相關變數
+        var activeLasers = []; // 儲存畫布上正在發射的雷射
+        var ghostLaserCooldown = 0; // 幽靈發射雷射的冷卻時間戳記
+        
+        var grid = []; 
+        var mapData = []; 
+        // 【新增】控制面板變數
+        var targetDensity = 0.4; // 目標牆壁密度 
+        var baseMutationRate = 5; // 基礎變異速率
+        var isGameRunning = false;
+        // 【新增】爆破技能的時間追蹤變數
+        var pacLastX = -1;
+        var pacLastY = -1;
+        var pacIdleStartTime = Date.now(); // 小精靈停留在原地的起始時間
+        var ghostStuckStartTime = null;    // 幽靈找不到路的暴怒起始時間
+        var canvas = document.getElementById('blastCanvas');
+        var ctx = canvas.getContext('2d');
+        var cellW = 0, cellH = 0; 
+
+        // 視窗縮放時重新計算格子大小
+        function resizeCanvas() {
+            canvas.width = table.offsetWidth;
+            canvas.height = table.offsetHeight;
+            cellW = canvas.width / cols;
+            cellH = canvas.height / rows;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // 【新增】地形爆破函式 (清除半徑 3 格的牆壁)
+        function activateBlast(centerX, centerY, isGhost) {
+            // 使用曼哈頓距離計算半徑 3 格的菱形範圍
+            for (var r = centerY - 3; r <= centerY + 3; r++) {
+                for (var c = centerX - 3; c <= centerX + 3; c++) {
+                    if (r >= 0 && r < rows && c >= 0 && c < cols) {
+                        var dist = Math.abs(centerX - c) + Math.abs(centerY - r);
+                        if (dist <= 3) {
+                            // 如果是牆壁且不是門，就將其摧毀
+                            if (mapData[r][c] === 1 && !isDoor(c, r)) {
+                                mapData[r][c] = 0;
+                                grid[r][c].classList.remove('wall');
+                                // 炸開的瞬間噴發粒子特效
+                                createParticle(grid[r][c]);
+                            }
+                            
+                            // 視覺衝擊：爆破範圍短暫亮起
+                            var cell = grid[r][c];
+                            var blastColor = isGhost ? "rgba(255, 50, 80, 0.4)" : "rgba(255, 215, 0, 0.4)";
+                            cell.style.backgroundColor = blastColor;
+                            
+                            // 0.3 秒後恢復原本顏色
+                            (function(el) {
+                                setTimeout(function() { el.style.backgroundColor = ""; }, 300);
+                            })(cell);
+                        }
+                    }
+                }
+            }
+        }
+        // 【新增】發射激光炮函式 (寬度 3 格，直線貫穿)
+        function activateLaser(startX, startY, dirX, dirY, isGhost) {
+            // 決定射線的法線方向 (用來向兩側擴展寬度)
+            var perpX = dirY === 0 ? 0 : 1;
+            var perpY = dirX === 0 ? 0 : 1;
+
+            var currentX = startX;
+            var currentY = startY;
+
+            // 將雷射加入陣列，交給 Canvas 在 0.4 秒內畫出殘影
+            activeLasers.push({
+                startX: startX, startY: startY,
+                dirX: dirX, dirY: dirY,
+                startTime: Date.now(),
+                isGhost: isGhost
+            });
+
+            // 沿著方向直線前進，直到撞到地圖的另一端邊界
+            while (currentX >= 0 && currentX < cols && currentY >= 0 && currentY < rows) {
+                // 清除包含中心與兩側 (寬度 3 格)
+                for (var w = -1; w <= 1; w++) {
+                    var cx = currentX + perpX * w;
+                    var cy = currentY + perpY * w;
+                    
+                    // 確保兩側的格子沒有超出邊界
+                    if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
+                        // 如果是牆壁且不是門，直接蒸發
+                        if (mapData[cy][cx] === 1 && !isDoor(cx, cy)) {
+                            mapData[cy][cx] = 0;
+                            grid[cy][cx].classList.remove('wall');
+                            createParticle(grid[cy][cx]);
+                        }
+                        
+                        // HTML 格子短暫閃爍效果
+                        var cell = grid[cy][cx];
+                        cell.style.backgroundColor = isGhost ? "rgba(255, 50, 80, 0.5)" : "rgba(100, 200, 255, 0.5)";
+                        (function(el) {
+                            setTimeout(function() { el.style.backgroundColor = ""; }, 300);
+                        })(cell);
+                    }
+                }
+                currentX += dirX;
+                currentY += dirY;
+            }
+        }
+
+        // 【全新邏輯】1-1. 先將地圖全部初始化為 0 (通道)
+        for (var r = 0; r < rows; r++) {
+            var mapRow = [];
+            for (var c = 0; c < cols; c++) {
+                mapRow.push(0);
+            }
+            mapData.push(mapRow);
+        }
+
+        // 【全新邏輯】1-2. 孤島生成法：隨機配置牆壁區塊
+        // 我們讓 r 每次跳 3 格，c 每次跳 4 格，保留周圍作為「保證暢通的道路」
+        for (var r = 1; r < rows - 1; r += 3) {
+            for (var c = 1; c < cols - 1; c += 4) {
+                // 決定這個區塊要長什麼樣子的牆壁 (6 種隨機藍圖)
+                var blueprint = Math.floor(Math.random() * 6); 
+
+                // 根據藍圖，將 1 (牆壁) 填入 mapData 中對應的位置
+                if (blueprint === 0) {
+                    // 全滿 2x3 方塊
+                    mapData[r][c]=1;   mapData[r][c+1]=1;   mapData[r][c+2]=1;
+                    mapData[r+1][c]=1; mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                } else if (blueprint === 1) {
+                    // 上半部橫條 1x3
+                    mapData[r][c]=1;   mapData[r][c+1]=1;   mapData[r][c+2]=1;
+                } else if (blueprint === 2) {
+                    // 下半部橫條 1x3
+                    mapData[r+1][c]=1; mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                } else if (blueprint === 3) {
+                    // 左側方塊 2x2
+                    mapData[r][c]=1;   mapData[r][c+1]=1;
+                    mapData[r+1][c]=1; mapData[r+1][c+1]=1;
+                } else if (blueprint === 4) {
+                    // 右側方塊 2x2
+                    mapData[r][c+1]=1;   mapData[r][c+2]=1;
+                    mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                }
+                // 如果 blueprint === 5，就保持全空，增加地圖的空曠度
+            }
+        }
+
+        // 【全新邏輯】1-3. 確保小精靈的「出生點 (中心點)」絕對安全
+        var startX = Math.floor(cols / 2);
+        var startY = Math.floor(rows / 2);
+        for (var i = -1; i <= 1; i++) {
+            for (var j = -1; j <= 1; j++) {
+                if (startY + i >= 0 && startY + i < rows && startX + j >= 0 && startX + j < cols) {
+                    mapData[startY + i][startX + j] = 0; // 強制清空中心 3x3 區域
+                }
+            }
+        }
+
+        // 【全新邏輯】1-4. 根據 mapData 真正把 HTML <tr> <td> 畫出來
+        for (var r = 0; r < rows; r++) {
+            var tr = document.createElement('tr');  
+            var rowArray = [];
+
+            for (var c = 0; c < cols; c++) {
+                var td = document.createElement('td');  
+                
+                // 如果陣列中是 1，就加上牆壁的樣式
+                if (mapData[r][c] === 1) {
+                    td.classList.add('wall');
+                }
+
+                tr.appendChild(td);  
+                rowArray.push(td);
+            }
+            table.appendChild(tr);  
+            grid.push(rowArray);
+        }
+        // 【新增】表格建置完畢後，初始化畫布並啟動動畫引擎
+        gameRenderLoop();
+
+        // 初始化小精靈座標
+        var pacX = startX; 
+        var pacY = startY; 
+        grid[pacY][pacX].classList.add('pacman');
+
+        var dx = 0; 
+        var dy = 0; 
+        var speed = 150;
+
+        // --- 保留原有的特效函式 ---
+        function rand(min, max) { return Math.random() * (max - min) + min; }
+        
+        function generateRandomPalette(elem) {
+            function hsl(h, s, l) { return 'hsl(' + (h|0) + ', ' + (s|0) + '%, ' + (l|0) + '%)'; }
+            var baseH = Math.floor(Math.random() * 360);
+            var baseS = Math.floor(Math.random() * 20) + 60;
+            var baseL = Math.floor(Math.random() * 18) + 45;
+
+            elem.style.setProperty('--c1', hsl(baseH, baseS, baseL));
+            elem.style.setProperty('--c2', hsl((baseH + 12) % 360, Math.min(95, baseS + 6), Math.min(85, baseL + 6)));
+            elem.style.setProperty('--c3', hsl((baseH + 24) % 360, Math.max(40, baseS - 6), Math.max(30, baseL - 6)));
+            elem.style.setProperty('--c4', hsl((baseH + 36) % 360, Math.max(35, baseS - 12), Math.min(90, baseL + 12)));
+        }
+
+        function startParticles(cell) {
+            for (var j = 0; j < 4; j++) { createParticle(cell); }
+            if (!cell.getAttribute('data-intervalId')) {
+                var id = setInterval(function() { createParticle(cell); }, 300);
+                cell.setAttribute('data-intervalId', id);
+            }
+        }
+
+        function stopParticles(cell) {
+            var intervalId = cell.getAttribute('data-intervalId');
+            if (intervalId) {
+                clearInterval(parseInt(intervalId));
+                cell.removeAttribute('data-intervalId');
+            }
+            var particles = cell.getElementsByTagName('div');
+            while (particles.length > 0) { particles[0].parentNode.removeChild(particles[0]); }
+        }
+
+        function createParticle(parentCell) {
+            var particle = document.createElement('div');
+            particle.className = 'particle';
+            if (Math.random() > 0.5) particle.style.borderRadius = '50%';
+            var size = Math.random() * 10 + 5;
+            particle.style.width = size + 'px';
+            particle.style.height = size + 'px';
+            particle.style.left = (Math.random() * 80 + 10) + '%';
+            var duration = Math.random() * 2 + 1.5;
+            particle.style.animationDuration = duration + 's';
+            parentCell.appendChild(particle);
+            setTimeout(function() {
+                if (particle.parentNode === parentCell) parentCell.removeChild(particle);
+            }, duration * 1000);
+        }
+
+        // 【新增】小精靈的移動方向變數 (dx: X軸方向, dy: Y軸方向)
+        var dx = 0; 
+        var dy = 0; 
+        var speed = 150; // 移動速度：每 150 毫秒走一格（數字越小越快）
+
+        // 監聽鍵盤事件
+        document.addEventListener('keydown', function(event) {
+            
+            // 1. ESC 鍵：開關側邊選單
+            if (event.key === 'Escape') {
+                var menu = document.getElementById('side-menu');
+                menu.classList.toggle('hidden');
+                return;
+            }
+
+            // 2. 【升級】Enter 鍵：智慧判斷當前狀態
+            if (event.key === 'Enter') {
+                event.preventDefault(); // 【關鍵修復】阻止瀏覽器預設的 Enter 鍵行為，避免重複點擊
+
+                var endScreen = document.getElementById('end-screen');
+                if (endScreen.classList.contains('visible')) {
+                    // 如果結算畫面正開著，按 Enter 等同於按下「重新開始」
+                    document.getElementById('restart-btn').click();
+                } else {
+                    // 否則，正常切換遊戲開始/暫停
+                    document.getElementById('toggle-game-btn').click();
+                }
+                return;
+            }
+
+            // 如果遊戲暫停中，就不執行下方的技能與移動邏輯
+            if (!isGameRunning) return;
+
+           // 3. 按鍵 0 與 1：切換裝備技能
+            if (event.key === '0') {
+                currentSkill = 'blast';
+                var skillDisplay = document.getElementById('current-skill-val');
+                if (skillDisplay) skillDisplay.innerText = "清圖爆破 (停留" + (chargeTimeMs/1000) + "秒)";
+                return;
+            }
+            if (event.key === '1') {
+                currentSkill = 'laser';
+                var skillDisplay = document.getElementById('current-skill-val');
+                if (skillDisplay) skillDisplay.innerText = "反向激光炮 (邊界受阻時)";
+                return;
+            }
+
+            // 4. 空白鍵：發動當前裝備的技能
+            if (event.key === ' ') {
+                event.preventDefault(); 
+
+                if (currentSkill === 'blast') {
+                    // --- 技能 1：清圖爆破 ---
+                    var idleTime = Date.now() - pacIdleStartTime;
+                    if (idleTime >= chargeTimeMs) { 
+                        activateBlast(pacX, pacY, false);
+                        pacIdleStartTime = Date.now(); 
+                    }
+                } else if (currentSkill === 'laser') {
+                    // --- 技能 2：反向激光炮 ---
+                    // 判斷條件：玩家企圖往 dx, dy 移動，但碰到了地圖邊界
+                    var nextX = pacX + dx;
+                    var nextY = pacY + dy;
+                    var isOutOfBounds = (nextX < 0 || nextX >= cols || nextY < 0 || nextY >= rows);
+                    
+                    if (isOutOfBounds) {
+                        // 計算對面的座標
+                        var wrapX = (nextX + cols) % cols;
+                        var wrapY = (nextY + rows) % rows;
+                        // 如果對面是一道牆，代表「抵達邊際後無法跨越」！
+                        if (mapData[wrapY][wrapX] === 1) {
+                            // 朝向正後方 (-dx, -dy) 發射激光炮！
+                            activateLaser(pacX, pacY, -dx, -dy, false);
+                        } else {
+                            console.log("對面不是牆壁，你可以直接穿過去！");
+                        }
+                    } else {
+                        console.log("必須在邊界受阻時才能發射！");
+                    }
+                }
+                return; 
+            }
+
+            // --- 下方保留原本的移動方向鍵邏輯 ---
+            if (event.key === 'ArrowUp' || event.key === 'w') {
+                dx = 0; dy = -1;
+            } else if (event.key === 'ArrowDown' || event.key === 's') {
+                dx = 0; dy = 1;
+            } else if (event.key === 'ArrowLeft' || event.key === 'a') {
+                dx = -1; dy = 0;
+            } else if (event.key === 'ArrowRight' || event.key === 'd') {
+                dx = 1; dy = 0;
+            }
+        });
+
+        function movePacman() {
+            if (!isGameRunning) return;
+            if (dx === 0 && dy === 0) return;
+
+            // 【重點 1】邊界穿越 (Screen Wrap) 邏輯
+            // 利用餘數運算 (%)，當 X 小於 0 時會變成 cols-1，大於 cols-1 時會變成 0
+            var nextX = (pacX + dx + cols) % cols;
+            var nextY = (pacY + dy + rows) % rows;
+
+            // 【重點 2】牆壁碰撞偵測 (Wall Collision)
+            if (mapData[nextY][nextX] === 1) {
+                // 如果下一步是牆壁 (1)，就直接 return 放棄這次移動
+                return; 
+            }
+
+            // --- 執行移動與特效 ---
+            var previousCell = grid[pacY][pacX];
+            previousCell.classList.remove('pacman');
+            previousCell.classList.remove('active-gradient');
+            stopParticles(previousCell);
+
+            // 更新座標
+            pacX = nextX;
+            pacY = nextY;
+
+            // 1. 踩到逃生門 -> 遊戲勝利！
+            if (pacX === escapeDoor.x && pacY === escapeDoor.y) {
+                showEndScreen("逃出生天！", "你成功找到了真正的傳送門！", "#32ff64"); // 翠綠色
+                return;
+            }
+
+            // 2. 踩到混淆門 -> 隨機傳送！
+            for (var i = 0; i < decoyDoors.length; i++) {
+                if (pacX === decoyDoors[i].x && pacY === decoyDoors[i].y) {
+                    // 從剩下的假門中隨機挑選一扇作為出口
+                    var otherDoors = decoyDoors.filter(function(d, index) { return index !== i; });
+                    if (otherDoors.length > 0) {
+                        var targetDoor = otherDoors[Math.floor(Math.random() * otherDoors.length)];
+                        
+                        // 瞬間修改小精靈的座標到出口門
+                        pacX = targetDoor.x;
+                        pacY = targetDoor.y;
+                        
+                        // 清空方向，避免傳送後直接衝進牆壁
+                        dx = 0; 
+                        dy = 0; 
+                    }
+                    break; 
+                }
+            }
+            var currentCell = grid[pacY][pacX];
+            generateRandomPalette(currentCell);
+            currentCell.classList.add('active-gradient');
+            startParticles(currentCell);
+            currentCell.classList.add('pacman');
+            // 【新增】檢查是否移動了位置，如果是，就重置蓄力時間
+            if (pacX !== pacLastX || pacY !== pacLastY) {
+                pacLastX = pacX;
+                pacLastY = pacY;
+                pacIdleStartTime = Date.now();
+            }
+        }
+
+        setInterval(movePacman, speed);
+        // 【優化升級】動態平衡迷宮變異系統
+        function mutateMaze() {
+            if (!isGameRunning) return;
+            // 1. 計算目前的牆壁總數與密度
+            var currentWalls = 0;
+            for (var r = 0; r < rows; r++) {
+                for (var c = 0; c < cols; c++) {
+                    if (mapData[r][c] === 1) currentWalls++;
+                }
+            }
+            var totalCells = rows * cols;
+            var currentDensity = currentWalls / totalCells;
+
+            // 2. 決定這次要「建牆」還是「拆牆」的數量
+            var buildCount = baseMutationRate;
+            var destroyCount = baseMutationRate;
+
+            // 【優化】動態計算差異比例，給予渦輪增壓
+            var densityDiff = Math.abs(currentDensity - targetDensity);
+            
+            // 差異越大，校正速度越快 (最多每秒變化 80 格，產生視覺震撼感)
+            var correctionSpeed = Math.floor(densityDiff * totalCells * 0.2) + 5; 
+
+            // 動態平衡校正
+            if (currentDensity < targetDensity - 0.01) {
+                buildCount += correctionSpeed; // 瘋狂建牆
+            } else if (currentDensity > targetDensity + 0.01) {
+                destroyCount += correctionSpeed; // 瘋狂拆牆
+            }
+
+            // 如果變異度設為 0，且密度已經達標，就不做任何事
+            if (baseMutationRate === 0 && Math.abs(currentDensity - targetDensity) <= 0.01) {
+                return;
+            }
+
+            // 動作 A：建造牆壁
+            for (var i = 0; i < buildCount; i++) {
+                var built = false, attempts = 0;
+                while (!built && attempts < 50) {
+                    var r = Math.floor(Math.random() * rows);
+                    var c = Math.floor(Math.random() * cols);
+                    
+                    // 分別計算與「小精靈」和「幽靈」的曼哈頓距離
+                    var distanceToPacman = Math.abs(pacX - c) + Math.abs(pacY - r);
+                    var distanceToGhost = Math.abs(ghostX - c) + Math.abs(ghostY - r);
+                    
+                    // 【條件升級】必須是空地、上面沒有門，且遠離小精靈 (>4格) 與 遠離幽靈 (>2格，給鬼一點喘息空間)
+                    if (mapData[r][c] === 0 && distanceToPacman > 4 && distanceToGhost > 2 && !isDoor(c, r)) {
+                        mapData[r][c] = 1;
+                        grid[r][c].classList.add('wall');
+                        built = true;
+                    }
+                    attempts++;
+                }
+            }
+
+            // 動作 B：拆除牆壁
+            for (var i = 0; i < destroyCount; i++) {
+                var destroyed = false, attempts = 0;
+                while (!destroyed && attempts < 50) {
+                    var r = Math.floor(Math.random() * rows);
+                    var c = Math.floor(Math.random() * cols);
+                    
+                    if (mapData[r][c] === 1 && !isDoor(c, r)) {
+                        mapData[r][c] = 0;
+                        grid[r][c].classList.remove('wall');
+                        destroyed = true;
+                    }
+                    attempts++;
+                }
+            }
+        }
+
+        // 【新增】監聽拉桿數值變化，即時更新變數與 UI 顯示
+        document.getElementById('density-slider').addEventListener('input', function(e) {
+            targetDensity = parseInt(e.target.value) / 100;
+            document.getElementById('density-val').innerText = e.target.value + '%';
+        });
+
+        document.getElementById('mutation-slider').addEventListener('input', function(e) {
+            baseMutationRate = parseInt(e.target.value);
+            document.getElementById('mutation-val').innerText = e.target.value;
+        });
+
+        // 啟動變異計時器：每 1000 毫秒 (1秒) 觸發一次 mutateMaze
+        setInterval(mutateMaze, 1000);
+        var ghostSpeed = 250; // 幽靈的速度 (設定比小精靈的 150 稍慢，給予逃跑空間)
+        var ghostX = 0; 
+        var ghostY = 0;
+        // 【新增】安全生成幽靈的輔助函式
+        function spawnGhostSafely() {
+            // 先確保舊位置的幽靈樣式被清除 (如果是重置的話)
+            if (grid[ghostY] && grid[ghostY][ghostX]) {
+                grid[ghostY][ghostX].classList.remove('ghost');
+            }
+            
+            var r, c;
+            var attempts = 0;
+            do {
+                r = Math.floor(Math.random() * rows);
+                c = Math.floor(Math.random() * cols);
+                var distanceToPacman = Math.abs(pacX - c) + Math.abs(pacY - r);
+                attempts++;
+                // 條件：必須是通道，且距離小精靈超過 15 格 (避免一開局就被秒殺)
+            } while ((mapData[r][c] === 1 || distanceToPacman < 15) && attempts < 100);
+            
+            ghostX = c;
+            ghostY = r;
+            grid[ghostY][ghostX].classList.add('ghost');
+        }
+
+        // 首次載入遊戲時呼叫一次
+        spawnGhostSafely();
+
+        // 【終極優化】BFS 尋路演算法：支援「聰明挖牆」邏輯
+        function getNextGhostMove() {
+            var queue = [{x: ghostX, y: ghostY, path: []}];
+            var visited = new Set();
+            visited.add(ghostY + ',' + ghostX);
+
+            var directions = [
+                {dx: 0, dy: -1}, {dx: 1, dy: 0}, {dx: 0, dy: 1}, {dx: -1, dy: 0}
+            ];
+
+            // 記錄能走到的「離小精靈最近的格子」
+            var closestNode = {x: ghostX, y: ghostY, path: []};
+            
+            // 輔助函式：計算考慮「穿越邊界」的最短曼哈頓距離
+            function getDist(x1, y1, x2, y2) {
+                var dX = Math.abs(x1 - x2);
+                var dY = Math.abs(y1 - y2);
+                return Math.min(dX, cols - dX) + Math.min(dY, rows - dY);
+            }
+            
+            // 記錄目前的最小距離
+            var minDistance = getDist(ghostX, ghostY, pacX, pacY);
+
+            while (queue.length > 0) {
+                var current = queue.shift();
+
+                // 如果找到小精靈，回傳最短路徑的第一步
+                if (current.x === pacX && current.y === pacY) {
+                    return current.path.length > 0 ? current.path[0] : null;
+                }
+
+                // 【關鍵智能】檢查這格是不是目前能走到「離小精靈最近的」
+                var dist = getDist(current.x, current.y, pacX, pacY);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestNode = current;
+                }
+
+                // 展開相鄰節點
+                for (var i = 0; i < directions.length; i++) {
+                    var dir = directions[i];
+                    var nextX = (current.x + dir.dx + cols) % cols;
+                    var nextY = (current.y + dir.dy + rows) % rows;
+                    var key = nextY + ',' + nextX;
+
+                    if (mapData[nextY][nextX] !== 1 && !visited.has(key)) {
+                        visited.add(key);
+                        var newPath = current.path.slice();
+                        if (newPath.length === 0) {
+                            newPath.push({x: nextX, y: nextY}); // 記下第一步
+                        }
+                        queue.push({x: nextX, y: nextY, path: newPath});
+                    }
+                }
+            }
+            
+            // 如果死路一條，回傳「能走到最近的那一格」的第一步
+            if (closestNode.path.length > 0) {
+                return closestNode.path[0];
+            } else {
+                // 如果 closestNode.path 是空的，代表「現在站的地方已經是極限了」
+                // 這時候才回傳 null，讓外面的 moveGhost() 觸發原地蓄力爆破！
+                return null; 
+            }
+        }
+
+        // 幽靈的移動迴圈 (加入防卡死機制)
+        function moveGhost() {
+            if (!isGameRunning) return;
+            var nextMove = getNextGhostMove();
+
+            // 如果 BFS 找不到路徑 (小精靈被包圍或鬼被困住)
+            if (!nextMove) {
+                // 檢查幽靈是否剛好卡在地圖的「最邊緣」
+                var isAtEdge = (ghostX === 0 || ghostX === cols - 1 || ghostY === 0 || ghostY === rows - 1);
+                
+                // 【AI 決策：如果卡在邊界，且冷卻完畢，優先使用激光炮清出一條大路！】
+                if (isAtEdge && (Date.now() - ghostLaserCooldown > 5000)) {
+                    var ldx = 0, ldy = 0;
+                    if (ghostX === 0) ldx = 1;               // 卡左邊，往右射
+                    else if (ghostX === cols - 1) ldx = -1;  // 卡右邊，往左射
+                    else if (ghostY === 0) ldy = 1;          // 卡上面，往下射
+                    else if (ghostY === rows - 1) ldy = -1;  // 卡下面，往上射
+                    
+                    activateLaser(ghostX, ghostY, ldx, ldy, true);
+                    ghostLaserCooldown = Date.now(); // 進入 5 秒冷卻
+                    ghostStuckStartTime = null;      // 打斷爆破蓄力
+                } 
+                // 【AI 決策：如果不在邊界，或激光冷卻中，則乖乖原地蓄力爆破】
+                else {
+                    if (ghostStuckStartTime === null) {
+                        ghostStuckStartTime = Date.now();
+                    } else if (Date.now() - ghostStuckStartTime >= chargeTimeMs) {
+                        activateBlast(ghostX, ghostY, true);
+                        ghostStuckStartTime = null; 
+                    }
+                }
+                
+                nextMove = null; // 留在原地施法
+            } else {
+                ghostStuckStartTime = null; // 路通了就解除爆破蓄力
+            }
+
+            // 執行移動
+            if (nextMove) {
+                grid[ghostY][ghostX].classList.remove('ghost');
+                ghostX = nextMove.x;
+                ghostY = nextMove.y;
+                grid[ghostY][ghostX].classList.add('ghost');
+
+                if (ghostX === pacX && ghostY === pacY) {
+                    showEndScreen("被抓到了！", "成為了迷宮中的亡魂...", "#ff3250"); // 幽靈紅
+                }
+            }
+        }
+
+        // 啟動幽靈的人工智慧定時器
+        setInterval(moveGhost, ghostSpeed);
+        // 【新增】門的變數與狀態
+        var escapeDoor = null; // 唯一的真門 (逃生門)
+        var decoyDoors = [];   // 假門 (混淆門) 陣列
+        var numDecoyDoors = 4; // 畫面上同時存在的假門數量
+
+        // 輔助函式：在迷宮中尋找一個沒有牆壁、也沒有小精靈的空地
+        function getRandomEmptyCell() {
+            var r, c;
+            do {
+                r = Math.floor(Math.random() * rows);
+                c = Math.floor(Math.random() * cols);
+            } while (mapData[r][c] === 1 || (r === pacY && c === pacX));
+            return {x: c, y: r};
+        }
+
+        // 輔助函式：判斷某個座標是否有門
+        function isDoor(x, y) {
+            if (escapeDoor && escapeDoor.x === x && escapeDoor.y === y) return true;
+            for (var i = 0; i < decoyDoors.length; i++) {
+                if (decoyDoors[i].x === x && decoyDoors[i].y === y) return true;
+            }
+            return false;
+        }
+
+        // 初始化：生成 1 扇固定位置的逃生門
+        var ePos = getRandomEmptyCell();
+        escapeDoor = {x: ePos.x, y: ePos.y};
+        grid[escapeDoor.y][escapeDoor.x].classList.add('escape-door');
+
+        // 生成與重置混淆門的函式
+        function spawnDecoyDoors() {
+            // 1. 先清除舊的混淆門
+            for (var i = 0; i < decoyDoors.length; i++) {
+                var d = decoyDoors[i];
+                grid[d.y][d.x].classList.remove('door');
+            }
+            decoyDoors = [];
+
+            // 2. 隨機生成新的混淆門
+            for (var i = 0; i < numDecoyDoors; i++) {
+                var pos = getRandomEmptyCell();
+                // 確保假門不會剛好蓋在真門上
+                while(pos.x === escapeDoor.x && pos.y === escapeDoor.y) {
+                    pos = getRandomEmptyCell();
+                }
+                decoyDoors.push({x: pos.x, y: pos.y});
+                grid[pos.y][pos.x].classList.add('door');
+            }
+        }
+
+        // 遊戲開始時先生成一次假門
+        spawnDecoyDoors();
+        setInterval(function() {
+            if (isGameRunning) spawnDecoyDoors();
+        }, 6000);
+        // 【新增】綁定開始/暫停按鈕事件
+       document.getElementById('toggle-game-btn').addEventListener('click', function() {
+            isGameRunning = !isGameRunning;
+            
+            if (isGameRunning) {
+                this.innerText = '暫停遊戲';
+                this.classList.add('paused');
+            } else {
+                this.innerText = '繼續遊戲';
+                this.classList.remove('paused');
+            }
+            
+            // 【關鍵修復】移除按鈕的焦點 (Focus)，防止後續按空白鍵時誤觸！
+            this.blur();
+        });
+        // 【新增】徹底重置遊戲與畫面的函式
+        function resetGame() {
+            // 1. 停止遊戲，並恢復按鈕狀態
+            isGameRunning = false;
+            var btn = document.getElementById('toggle-game-btn');
+            btn.innerText = '開始遊戲';
+            btn.classList.remove('paused');
+
+            // 2. 徹底清理桌面：移除所有特效、實體與計時器
+            for (var r = 0; r < rows; r++) {
+                for (var c = 0; c < cols; c++) {
+                    var cell = grid[r][c];
+                    // 清除所有附加的 class
+                    cell.className = ''; 
+                    // 停止該格的粒子特效
+                    stopParticles(cell); 
+                    // 地圖陣列歸零
+                    mapData[r][c] = 0;   
+                }
+            }
+
+            // 3. 重新生成初始的孤島迷宮藍圖
+            for (var r = 1; r < rows - 1; r += 3) {
+                for (var c = 1; c < cols - 1; c += 4) {
+                    var blueprint = Math.floor(Math.random() * 6);
+                    if (blueprint === 0) {
+                        mapData[r][c]=1; mapData[r][c+1]=1; mapData[r][c+2]=1;
+                        mapData[r+1][c]=1; mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                    } else if (blueprint === 1) {
+                        mapData[r][c]=1; mapData[r][c+1]=1; mapData[r][c+2]=1;
+                    } else if (blueprint === 2) {
+                        mapData[r+1][c]=1; mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                    } else if (blueprint === 3) {
+                        mapData[r][c]=1; mapData[r][c+1]=1;
+                        mapData[r+1][c]=1; mapData[r+1][c+1]=1;
+                    } else if (blueprint === 4) {
+                        mapData[r][c+1]=1; mapData[r][c+2]=1;
+                        mapData[r+1][c+1]=1; mapData[r+1][c+2]=1;
+                    }
+                }
+            }
+
+            // 確保中心點絕對安全
+            var startX = Math.floor(cols / 2);
+            var startY = Math.floor(rows / 2);
+            for (var i = -1; i <= 1; i++) {
+                for (var j = -1; j <= 1; j++) {
+                    if (startY + i >= 0 && startY + i < rows && startX + j >= 0 && startX + j < cols) {
+                        mapData[startY + i][startX + j] = 0;
+                    }
+                }
+            }
+
+            // 將新生成的牆壁畫上畫面
+            for (var r = 0; r < rows; r++) {
+                for (var c = 0; c < cols; c++) {
+                    if (mapData[r][c] === 1) grid[r][c].classList.add('wall');
+                }
+            }
+
+            // 4. 重置角色與方向
+            pacX = startX; pacY = startY;
+            dx = 0; dy = 0;
+            grid[pacY][pacX].classList.add('pacman');
+
+            spawnGhostSafely();
+
+            // 5. 重置所有傳送門
+            var ePos = getRandomEmptyCell();
+            escapeDoor = {x: ePos.x, y: ePos.y};
+            grid[escapeDoor.y][escapeDoor.x].classList.add('escape-door');
+            spawnDecoyDoors();
+        }
+        // 【新增】顯示結算畫面
+        function showEndScreen(title, message, color) {
+            isGameRunning = false;
+            document.getElementById('end-title').innerText = title;
+            document.getElementById('end-title').style.color = color;
+            document.getElementById('end-msg').innerText = message;
+            document.getElementById('end-screen').classList.add('visible');
+            
+            // 同步更新左側選單的按鈕狀態
+            var btn = document.getElementById('toggle-game-btn');
+            btn.innerText = '開始遊戲';
+            btn.classList.remove('paused');
+        }
+
+        // 綁定結算畫面的「重新開始」按鈕
+        document.getElementById('restart-btn').addEventListener('click', function() {
+            document.getElementById('end-screen').classList.remove('visible');
+            resetGame();
+            this.blur();
+        });
+        // ========= 【全新：滑順 Canvas 動畫引擎 (DOM 追蹤版)】 =========
+        function drawExpandingRing(centerX, centerY, startTime, isGhost) {
+            if (startTime === null) return;
+
+            var elapsedTime = Date.now() - startTime;
+            var effectiveTime = Math.min(chargeTimeMs, elapsedTime);
+            var pct = effectiveTime / chargeTimeMs; 
+
+            // 【終極防跑位黑科技】放棄數學除法，直接抓取 HTML 格子的真實座標與大小！
+            var cell = grid[centerY][centerX];
+            var pxX = cell.offsetLeft + (cell.offsetWidth / 2);
+            var pxY = cell.offsetTop + (cell.offsetHeight / 2);
+
+            // 計算半徑 (最大為 3.5 格，剛好包覆半徑 3 格的範圍)
+            var avgCellSize = (cell.offsetWidth + cell.offsetHeight) / 2;
+            var maxRadiusPx = 3.5 * avgCellSize; 
+            var currentRadiusPx = pct * maxRadiusPx;
+
+            // 繪製光圈
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(pxX, pxY, currentRadiusPx, 0, Math.PI * 2);
+
+            var baseColor = isGhost ? [255, 50, 80] : [255, 215, 0];
+            var opacity = 0.6 + Math.sin(Date.now() / 150) * 0.1; 
+
+            if (pct < 1) {
+                // 蓄力中：翠藍色發光外環
+                ctx.strokeStyle = `rgba(100, 200, 255, ${opacity})`;
+                ctx.lineWidth = 3;
+                ctx.shadowColor = `rgba(100, 200, 255, 1)`;
+                ctx.shadowBlur = 15;
+            } else {
+                // 滿氣時：專屬顏色強光
+                ctx.strokeStyle = `rgba(${baseColor.join(',')}, 1)`;
+                ctx.lineWidth = 5;
+                ctx.shadowColor = `rgba(${baseColor.join(',')}, 1)`;
+                ctx.shadowBlur = 25;
+                ctx.fillStyle = `rgba(${baseColor.join(',')}, 0.08)`;
+                ctx.fill();
+            }
+            
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 使用 requestAnimationFrame 達到 60FPS 且無殘影
+        function gameRenderLoop() {
+            // 實時校正畫布解析度，確保與表格完美重合
+            if (canvas.width !== table.offsetWidth || canvas.height !== table.offsetHeight) {
+                canvas.width = table.offsetWidth;
+                canvas.height = table.offsetHeight;
+            }
+
+            // 每幀第一件事：徹底清空畫布，解決殘影！
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (isGameRunning) {
+                if (currentSkill === 'blast') {
+                    drawExpandingRing(pacX, pacY, pacIdleStartTime, false);
+                }
+                if (ghostStuckStartTime !== null) {
+                    drawExpandingRing(ghostX, ghostY, ghostStuckStartTime, true);
+                }
+            }
+            // 【新增】繪製畫布上的激光殘影
+            var now = Date.now();
+            for (var i = activeLasers.length - 1; i >= 0; i--) {
+                var laser = activeLasers[i];
+                var age = now - laser.startTime;
+                
+                if (age > 400) { // 雷射殘留 0.4 秒後消失
+                    activeLasers.splice(i, 1);
+                    continue;
+                }
+                
+                var alpha = 1 - (age / 400); // 隨時間淡出
+                var color = laser.isGhost ? "255, 50, 80" : "100, 200, 255";
+                var avgSize = (cellW + cellH) / 2;
+                
+                // 起點像素座標
+                var startPxX = (laser.startX + 0.5) * cellW;
+                var startPxY = (laser.startY + 0.5) * cellH;
+                
+                // 模擬射線抵達地圖另一端
+                var endX = laser.startX;
+                var endY = laser.startY;
+                while(endX >= 0 && endX < cols && endY >= 0 && endY < rows) {
+                    endX += laser.dirX;
+                    endY += laser.dirY;
+                }
+                // 退回一格保持在畫面內
+                endX -= laser.dirX;
+                endY -= laser.dirY;
+                
+                var endPxX = (endX + 0.5) * cellW;
+                var endPxY = (endY + 0.5) * cellH;
+                
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(startPxX, startPxY);
+                ctx.lineTo(endPxX, endPxY);
+                // 畫出雷射外圍的發光暈輪
+                ctx.strokeStyle = `rgba(${color}, ${alpha * 0.8})`;
+                ctx.lineWidth = avgSize * 3; // 寬度 3 格
+                ctx.lineCap = "round";
+                ctx.shadowColor = `rgb(${color})`;
+                ctx.shadowBlur = 30;
+                ctx.stroke();
+                
+                // 畫出雷射中心的高溫純白核心
+                ctx.beginPath();
+                ctx.moveTo(startPxX, startPxY);
+                ctx.lineTo(endPxX, endPxY);
+                ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.lineWidth = avgSize * 0.8;
+                ctx.stroke();
+                ctx.restore();
+            }
+            requestAnimationFrame(gameRenderLoop);
+        }
+        // ===========================================
+    </script>
+    
+
+</body>
+</html>
